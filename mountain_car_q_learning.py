@@ -8,14 +8,14 @@ import numpy as np
 import gym
 from gym import wrappers
 
-n_states = 40
-iter_max = 10000
+n_states = 40           # no of states in the environment
+iter_max = 10000        # max iterations
 
 initial_lr = 1.0        # initial learning rate
-min_lr = 0.003
+min_lr = 0.003          # min learning rate to change
 gamma = 1.0             # discount
-t_max = 10000
-eps = 0.02
+t_max = 10000           # max number of tries in a single simulation.
+eps = 0.02              # probability?
 
 def obs_to_state(env, obs):
     """Maps an observation to state
@@ -68,17 +68,17 @@ def run_episode(env, policy=None, render=False):
             break
     return total_reward
 
-if "__name__" == "__main__":
+if __name__ == "__main__":
     env_name = 'MountainCar-v0'
     env = gym.make(env_name)
-    env.seed(0)
+    seed = 0
     np.random.seed(0)
 
     print("Let's use Q-Learning")
     q_table = np.zeros((n_states, n_states, 3))
 
     for i in range(iter_max):
-        obs = env.reset()
+        obs = env.reset(seed=seed)
         total_reward = 0
 
         # eta: learning rate is decreased at each step
@@ -86,8 +86,10 @@ if "__name__" == "__main__":
         for j in range(t_max):
             a, b = obs_to_state(env, obs)
             if np.random.uniform(0, 1) < eps:
+                # pick a random action if probability is less than threshold set above
                 action = np.random.choice(env.action_space.n)
             else:
+                # pick an action according to the current estimates of Q_Values.
                 logits = q_table[a][b]
                 logits_exp = np.exp(logits)
                 probs = logits_exp / np.sum(logits_exp)
@@ -105,6 +107,7 @@ if "__name__" == "__main__":
                 break
 
         if i % 100 == 0:
+            # print after every 100 iterations
             print(f'Iteration # {i+1}, -- Total reward = {total_reward}')
     
     solution_policy = np.argmax(q_table, axis=2)
@@ -113,4 +116,5 @@ if "__name__" == "__main__":
     print("Average score of solution = ", np.mean(solution_policy_scores))
 
     # and now we will animate
+    env = gym.make(env_name, render_mode='human')
     run_episode(env, solution_policy, True)
