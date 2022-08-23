@@ -14,7 +14,7 @@ iter_max = 10000        # max iterations
 initial_lr = 1.0        # initial learning rate
 min_lr = 0.003          # min learning rate to change
 gamma = 1.0             # discount
-t_max = 10000           # max number of tries in a single simulation.
+t_max = 10000          # max number of tries in a single simulation.
 eps = 0.02              # probability?
 
 def obs_to_state(env, obs):
@@ -51,9 +51,9 @@ def run_episode(env, policy=None, render=False):
     total_reward = 0
     step_idx = 0
 
-    for _ in range(t_max):
-        if render:
-            env.render()
+    for _ in range(t_max):      #tmax instead of 10000
+        # if render:
+            # env.render()
         if policy is None:
             action = env.action_space.sample()
         else:
@@ -116,5 +116,6 @@ if __name__ == "__main__":
     print("Average score of solution = ", np.mean(solution_policy_scores))
 
     # and now we will animate
-    env = gym.make(env_name, render_mode='human')
     run_episode(env, solution_policy, True)
+
+    print('Test')
