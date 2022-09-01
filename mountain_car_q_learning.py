@@ -52,8 +52,8 @@ def run_episode(env, policy=None, render=False):
     step_idx = 0
 
     for _ in range(t_max):      #tmax instead of 10000
-        # if render:
-            # env.render()
+        if render:
+            env.render()
         if policy is None:
             action = env.action_space.sample()
         else:
@@ -70,9 +70,9 @@ def run_episode(env, policy=None, render=False):
 
 if __name__ == "__main__":
     env_name = 'MountainCar-v0'
-    env = gym.make(env_name)
+    env = gym.make(env_name, render_mode='human')
     seed = 0
-    np.random.seed(0)
+    np.random.seed(200)
 
     print("Let's use Q-Learning")
     q_table = np.zeros((n_states, n_states, 3))
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         total_reward = 0
 
         # eta: learning rate is decreased at each step
-        eta = max(min_lr, initial_lr * (0.85 ** (i/100)))
+        eta = max(min_lr, initial_lr * (0.85 ** (i/100)))       # pronounced eeta
         for j in range(t_max):
             a, b = obs_to_state(env, obs)
             if np.random.uniform(0, 1) < eps:
@@ -116,6 +116,10 @@ if __name__ == "__main__":
     print("Average score of solution = ", np.mean(solution_policy_scores))
 
     # and now we will animate
-    run_episode(env, solution_policy, True)
+    goto_next = input('Would you like to run with the selected policy? (Y/n)').lower()
+    if goto_next == 'y':
+        run_episode(env=env, policy=solution_policy, render=True)
+    else:
+        pass
 
-    print('Test')
+    print('Test and Simulation completed!')
