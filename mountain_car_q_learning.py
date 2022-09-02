@@ -4,6 +4,11 @@
 
 # Q-Learning Example using OpenAI GYM Mountain Car Environment
 
+# Get all the environments here,
+# import gym
+# envs = gym.envs.registry.all()
+# print(envs)
+
 import numpy as np
 import gym
 from gym import wrappers
@@ -70,7 +75,7 @@ def run_episode(env, policy=None, render=False):
 
 if __name__ == "__main__":
     env_name = 'MountainCar-v0'
-    env = gym.make(env_name, render_mode='human')
+    env = gym.make(env_name)
     seed = 0
     np.random.seed(200)
 
@@ -111,6 +116,7 @@ if __name__ == "__main__":
             print(f'Iteration # {i+1}, -- Total reward = {total_reward}')
     
     solution_policy = np.argmax(q_table, axis=2)
+
     solution_policy_scores = [run_episode(env, solution_policy, False) for _ in range(100)]
 
     print("Average score of solution = ", np.mean(solution_policy_scores))
@@ -118,7 +124,9 @@ if __name__ == "__main__":
     # and now we will animate
     goto_next = input('Would you like to run with the selected policy? (Y/n)').lower()
     if goto_next == 'y':
-        run_episode(env=env, policy=solution_policy, render=True)
+        env_2 = gym.make(env_name, render_mode='human')
+        env_2.reset(seed=seed)
+        run_episode(env=env_2, policy=solution_policy, render=True)
     else:
         pass
 
