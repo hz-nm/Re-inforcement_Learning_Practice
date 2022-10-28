@@ -38,8 +38,9 @@ from gym.wrappers import FrameStack
 # * Let's initialize the LunarLander Environment
 if gym.__version__ < '0.26':
     env = gym.make("LunarLander-v2", render_mode="human", new_step_api=True, continuous=True)
+    # env = gym.make("BipedalWalker-v3", render_mode='human')
 else:
-    env = gym.make("LunarLander-v2", render_mode="rgb", apply_api_compatibility=True, continous=True)
+    env = gym.make("LunarLander-v2", render_mode="rgb", apply_api_compatibility=True, continuous=True)
 
 # ! Put the action space overe here
 # ! Example Action -> np.array([main, lateral])
@@ -51,8 +52,8 @@ else:
 
 # env.action_space = Box
 # ! An example action space.
-action_space_ex = env.action_space.sample()
-print(f"Action Space: {action_space_ex.shape}")
+action_X = env.action_space.sample()
+print(f"Action Space: {action_X.shape}")        # Action Space -> 0 in Mario RL
 
 # Maybe we don't need to define the action space here and we can simply,
 # put random values in the act!
@@ -60,12 +61,12 @@ print(f"Action Space: {action_space_ex.shape}")
 
 env.reset()
 
-next_state, reward, done, trunc, info = env.step(action=action_space_ex)
+next_state, reward, done, _, info = env.step(action=np.array([0.5, -0.5]))
 print(f"State Shape: {next_state.shape}. \n Reward: {reward}, \n Done: {done} \n Info: {info}")
+# ! Original in Mario -> (240, 256, 3)
 
 
-# * Preprocess the Environment
-
+# * %% Preprocess the Environment
 class SkipFrame(gym.Wrapper):
     def __init__(self, env, skip):
         # ? Return only every skip -th frame
@@ -77,12 +78,12 @@ class SkipFrame(gym.Wrapper):
         total_reward = 0.0
         for i in range(self._skip):
             # Accumulate all rewards and repeat the action
-            obs, reward, done, trunc, info = self.env.step(action)
+            obs, reward, done, info = self.env.step(action)
             total_reward += reward
 
             if done:
                 break
-            return obs, total_reward, done, trunc, info
+            return obs, total_reward, done, info
     
 class GrayScaleObservation(gym.ObservationWrapper):
     def __init__(self, env):
@@ -92,7 +93,7 @@ class GrayScaleObservation(gym.ObservationWrapper):
     
     def permute_orientation(self, observation):
         # [H, W, C] to [C, H, W] tensor
-        observation = np.transpose(observation, (2, 0, 1))
+        # observation = np.transpose(observation, (2, 0, 1))
         observation = torch.tensor(observation.copy(), dtype=torch.float)
         return observation
 
@@ -121,15 +122,15 @@ class ResizeObservation(gym.ObservationWrapper):
         return observation
 
 # ! Now we apply WRAPPERS to environment
-env = SkipFrame(env, skip=4)
-env = GrayScaleObservation(env)
-# env = ResizeObservation(env, shape=84)
+# env = SkipFrame(env, skip=4)
+# env = GrayScaleObservation(env)
+# env = ResizeObservation(env, shape=8)
 
-if gym.__version__ < '0.26':
-    env = FrameStack(env, num_stack=4, new_step_api=True)
-else:
-    env = FrameStack(env, num_stack=4)
-
+# if gym.__version__ < '0.26':
+#     env = FrameStack(env, num_stack=4, new_step_api=True)
+# else:
+#     env = FrameStack(env, num_stack=4)
+# %%
 # ! Let's Create the Agent
 
 class Lander:
@@ -141,13 +142,14 @@ class Lander:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # self.net = LanderNet(self.state_dim, self.action_dim).float()
-        # TODO Do something here, Add a dimension maybe!
         
-        print(self.state_dim)
-        print(self.action_dim)
+        
+        print(f"Type of state: {type(self.state_dim)}")         # State in Mario here -> (4, 84, 84) class <'tuple'>
+        print(f"State: {self.state_dim}")
+        print(f"Action: {self.action_dim}")                     # Action in Mario here -> 2 class <'int'>
 
-        self.net = LanderNet(self.state_dim, self.action_dim)
+        # self.net = LanderNet(self.state_dim, self.action_dim)
+        self.net = LanderNet(self.state_dim, self.action_dim).float()
         self.net = self.net.to(device=self.device)
 
         self.exploration_rate = 1
@@ -179,19 +181,25 @@ class Lander:
         Returns:
             action_idx (int): Best action based on Explore or Exploit
         """
+
+        # TODO This function is currently returning a single index List [0] or [1]
+        # TODO This was the action space for Mario's running and not for Lunar Lander.
+        # TODO The action space of the lunar lander is of the following nature.
+        # TODO --> np.array([main_engine, lateral_engines])
         # EXPLORE
         if np.random.rand() < self.exploration_rate:
-            action_idx = np.random.randint(self.action_dim)
+            # action_idx = np.random.randint(self.action_dim)
             # ! maybe it will be,
-            # action_idx = env.action_space.sample()
+            action_idx = env.action_space.sample()
         
         #EXPLOIT
         else:
             state = state[0].__array__() if isinstance(state, tuple) else state.__array__()
 
             state = torch.tensor(state, device=self.device).unsqueeze(0)
+            print("EXPLOIT: {state}")
             action_values = self.net(state, model='online')
-            print(action_values)
+            print(f"Action Values: {action_values}")
             action_idx = torch.argmax(action_values, axis=1).item()
 
         
@@ -207,8 +215,8 @@ class Lander:
         """The landers memory
 
         Args:
-            state (LazyFrame)
-            next_state (LazyFrame)
+            state
+            next_state
             action (int)
             reward (float)
             done (bool)
@@ -314,6 +322,8 @@ class LanderNet(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         c = input_dim
+        print(f'Channels: {c} & Channel Type {type(c)}')
+        print(f'Output Channel: {output_dim[0]}')
         # if h != 84:
         #     raise ValueError
         # if w != 84:
@@ -321,16 +331,16 @@ class LanderNet(nn.Module):
 
         # !! YE HAI ONLINE
         self.online = nn.Sequential(
-            nn.Conv2d(in_channels=c, out_channels=32, kernel_size=8, stride=4),
+            nn.Conv2d(in_channels=c, out_channels=32, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),
+            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2, stride=1),
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(3136, 512),
             nn.ReLU(),
-            nn.Linear(512, output_dim),
+            nn.Linear(512, output_dim[0]),
         )
 
         self.target = copy.deepcopy(self.online)
@@ -346,7 +356,7 @@ class LanderNet(nn.Module):
         elif model == 'target':
             return self.target(input)
 
-
+# %%
 # ! ------------------------
 # ! LOGGING
 # ! ------------------------
@@ -454,8 +464,7 @@ class MetricLogger:
             plt.plot(getattr(self, f"moving_avg_{metric}"))
             plt.savefig(getattr(self, f"{metric}_plot"))        # ? GET THE ATTRIBUTE NAMED metric.  getattr(x, 'y' simply means x.y but I guess some difference in classes)
             plt.clf()
-
-
+# %%
 # ! ~><~~><~~><~~><~~><~~><~~><~~><~~><~~>
 # ? TIME TO PLAY
 # ! ~><~~><~~><~~><~~><~~><~~><~~><~~><~~>
@@ -468,7 +477,7 @@ save_dir = Path("checkpoints") / datetime.datetime.now().strftime('%Y-%m-%d T%H-
 save_dir.mkdir(parents=True)
 # if os.path.exists(save_dir):
 
-lander = Lander(state_dim=(8,), action_dim=env.action_space.shape, save_dir=save_dir)
+lander = Lander(state_dim=8, action_dim=env.action_space.shape, save_dir=save_dir)
 logger = MetricLogger(save_dir=save_dir)
 
 episodes = 10
@@ -479,9 +488,10 @@ for e in range(episodes):
     while True:
         # * Run agent on the state
         action = lander.act(state)
+        print(action)
 
         # * Agent performs the action
-        next_state, reward, done, trunc, info = env.step(action)
+        next_state, reward, done, _, info = env.step(action)
 
         # * Remember
         lander.cache(state, next_state, action, reward, done)
@@ -496,7 +506,7 @@ for e in range(episodes):
         state = next_state
 
         # * Check if end of GAME
-        if done or info["flag_get"]:
+        if done:
             break
 
     logger.log_episode()

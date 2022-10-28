@@ -23,9 +23,9 @@ for _ in range(1000):
         # comment out if code doesn't work
         observation, info = env.reset(return_info=True)
         # break
-        repeat = input("Do you want to RUN the Simulation\'s again? (Y/n) \n")
+        # repeat = input("Do you want to RUN the Simulation\'s again? (Y/n) \n")
 
-        if repeat == 'N' or repeat == 'n':
-            break
+        # if repeat == 'N' or repeat == 'n':
+        #     break
 
 env.close()
