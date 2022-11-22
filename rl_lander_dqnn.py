@@ -38,6 +38,7 @@ from gym.wrappers import FrameStack
 # * Let's initialize the LunarLander Environment
 if gym.__version__ < '0.26':
     env = gym.make("LunarLander-v2", render_mode="human", new_step_api=True, continuous=True)
+    # env = gym.make("LunarLander-v2", new_step_api=True, continuous=True)
     # env = gym.make("BipedalWalker-v3", render_mode='human')
 else:
     env = gym.make("LunarLander-v2", render_mode="rgb", apply_api_compatibility=True, continuous=True)
@@ -61,6 +62,7 @@ print(f"Action Space: {action_X.shape}")        # Action Space -> 0 in Mario RL
 
 env.reset()
 
+# ? This is basically a random action from the action space
 next_state, reward, done, _, info = env.step(action=np.array([0.5, -0.5]))
 print(f"State Shape: {next_state.shape}. \n Reward: {reward}, \n Done: {done} \n Info: {info}")
 # ! Original in Mario -> (240, 256, 3)
@@ -144,9 +146,9 @@ class Lander:
 
         
         
-        print(f"Type of state: {type(self.state_dim)}")         # State in Mario here -> (4, 84, 84) class <'tuple'>
-        print(f"State: {self.state_dim}")
-        print(f"Action: {self.action_dim}")                     # Action in Mario here -> 2 class <'int'>
+        # print(f"Type of state: {type(self.state_dim)}")         # State in Mario here -> (4, 84, 84) class <'tuple'>
+        # print(f"State: {self.state_dim}")
+        # print(f"Action: {self.action_dim}")                     # Action in Mario here -> 2 class <'int'>
 
         # self.net = LanderNet(self.state_dim, self.action_dim)
         self.net = LanderNet(self.state_dim, self.action_dim).float()
@@ -161,7 +163,7 @@ class Lander:
 
         self.memory = deque(maxlen=100000)
 
-        self.batch_size = 32
+        self.batch_size = 8
         self.gamma = 0.9
         
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
@@ -197,15 +199,17 @@ class Lander:
             state = state[0].__array__() if isinstance(state, tuple) else state.__array__()
 
             state = torch.tensor(state, device=self.device).unsqueeze(0)
-            print("EXPLOIT: {state}")
+            # print("EXPLOIT: {state}")
             action_values = self.net(state, model='online')
-            print(f"Action Values: {action_values}")
+            # print(f"Action Values: {action_values}")
             action_idx = torch.argmax(action_values, axis=1).item()
 
         
         # decrease the exploration rate
         self.exploration_rate *= self.exploration_rate_decay
         self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
+
+        print(self.exploration_rate)
 
         # increment step
         self.curr_step += 1
@@ -322,8 +326,9 @@ class LanderNet(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         c = input_dim
-        print(f'Channels: {c} & Channel Type {type(c)}')
-        print(f'Output Channel: {output_dim[0]}')
+        print("Using CONV")
+        # print(f'Channels: {c} & Channel Type {type(c)}')
+        # print(f'Output Channel: {output_dim[0]}')
         # if h != 84:
         #     raise ValueError
         # if w != 84:
@@ -333,9 +338,9 @@ class LanderNet(nn.Module):
         self.online = nn.Sequential(
             nn.Conv2d(in_channels=c, out_channels=32, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2, stride=1),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=2, stride=1),
             nn.ReLU(),
             nn.Flatten(),
             nn.Linear(3136, 512),
@@ -428,11 +433,11 @@ class MetricLogger:
     def record(self, episode, epsilon, step):
         mean_ep_reward = np.round(np.mean(self.ep_rewards[-100:]), 3)
         mean_ep_length = np.round(np.mean(self.ep_lengths[-100:]), 3)
-        mean_ep_loss = np.round(np.mean(self.ep_losses[-100:]), 3)
-        mean_ep_q = np.round(np.mean(self.ep_qs[-100:]), 3)
+        mean_ep_loss = np.round(np.mean(self.ep_avg_losses[-100:]), 3)
+        mean_ep_q = np.round(np.mean(self.ep_avg_qs[-100:]), 3)
 
-        self.moving_avg_ep_avg_rewards.append(mean_ep_reward)
-        self.moving_avg_ep_avg_lengths.append(mean_ep_length)
+        self.moving_avg_ep_rewards.append(mean_ep_reward)
+        self.moving_avg_ep_lengths.append(mean_ep_length)
         self.moving_avg_ep_avg_losses.append(mean_ep_loss)
         self.moving_avg_ep_avg_qs.append(mean_ep_q)
 
@@ -455,8 +460,8 @@ class MetricLogger:
         with open(self.save_log, "a") as f:
             f.write(
                 f"{episode:8d} {step:8d} {epsilon:10.3f}"
-                f"{mean_ep_reward:15.3f} {mean_ep_length:15.3f} {mean_ep_loss:15.3f} {mean_ep_q:15.3f}",
-                f"{time_since_last_record:15.3f}",
+                f"{mean_ep_reward:15.3f} {mean_ep_length:15.3f} {mean_ep_loss:15.3f} {mean_ep_q:15.3f}"
+                f"{time_since_last_record:15.3f}"
                 f"{datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'):>20}\n"
             )
 
@@ -480,29 +485,34 @@ save_dir.mkdir(parents=True)
 lander = Lander(state_dim=8, action_dim=env.action_space.shape, save_dir=save_dir)
 logger = MetricLogger(save_dir=save_dir)
 
-episodes = 10
+episodes = 100
 for e in range(episodes):
     state = env.reset()
 
     # * PLAY THE GAME
     while True:
         # * Run agent on the state
+        # print("ACT")
         action = lander.act(state)
-        print(action)
+        # print(action)
 
         # * Agent performs the action
         next_state, reward, done, _, info = env.step(action)
 
         # * Remember
+        # print("REMEMBER")
         lander.cache(state, next_state, action, reward, done)
 
         # * Learn
+        # print("LEARN")
         q, loss = lander.learn()
 
         # * Log
+        # print("LOG")
         logger.log_step(reward, loss, q)
 
         # * Update step
+        # print("UPDATE")
         state = next_state
 
         # * Check if end of GAME
