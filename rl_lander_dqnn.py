@@ -37,8 +37,8 @@ from gym.wrappers import FrameStack
 
 # * Let's initialize the LunarLander Environment
 if gym.__version__ < '0.26':
-    env = gym.make("LunarLander-v2", render_mode="human", new_step_api=True, continuous=True)
-    # env = gym.make("LunarLander-v2", new_step_api=True, continuous=True)
+    # env = gym.make("LunarLander-v2", render_mode="human", new_step_api=True, continuous=True)
+    env = gym.make("LunarLander-v2", new_step_api=True, continuous=True)
     # env = gym.make("BipedalWalker-v3", render_mode='human')
 else:
     env = gym.make("LunarLander-v2", render_mode="rgb", apply_api_compatibility=True, continuous=True)
@@ -66,7 +66,9 @@ env.reset()
 next_state, reward, done, _, info = env.step(action=np.array([0.5, -0.5]))
 print(f"State Shape: {next_state.shape}. \n Reward: {reward}, \n Done: {done} \n Info: {info}")
 # ! Original in Mario -> (240, 256, 3)
-
+# ! State shape in Lander -> (8,)
+# ! Channels: 8 & Channel Type class <'int'>
+# ! Output Channels: 2 --> Which is equal to ([main, lateral])
 
 # * %% Preprocess the Environment
 class SkipFrame(gym.Wrapper):
@@ -138,8 +140,8 @@ class ResizeObservation(gym.ObservationWrapper):
 class Lander:
     def __init__(self, state_dim, action_dim, save_dir):
 
-        self.state_dim = state_dim
-        self.action_dim = action_dim
+        self.state_dim = state_dim      # ? should be 8
+        self.action_dim = action_dim    # ? should be 2
         self.save_dir = save_dir
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -163,7 +165,7 @@ class Lander:
 
         self.memory = deque(maxlen=100000)
 
-        self.batch_size = 8
+        self.batch_size = 8 #32
         self.gamma = 0.9
         
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
@@ -189,16 +191,20 @@ class Lander:
         # TODO The action space of the lunar lander is of the following nature.
         # TODO --> np.array([main_engine, lateral_engines])
         # EXPLORE
-        if np.random.rand() < self.exploration_rate:
+        x = np.random.rand()
+        # print(f'The Random: {x} & the Exploration: {self.exploration_rate}')
+        # It is not the exploration rate's fault that my program is stopping.
+        if x < self.exploration_rate:
             # action_idx = np.random.randint(self.action_dim)
             # ! maybe it will be,
-            action_idx = env.action_space.sample()
+            action_idx = env.action_space.sample()  # ! Yes it is!
         
         #EXPLOIT
         else:
             state = state[0].__array__() if isinstance(state, tuple) else state.__array__()
 
             state = torch.tensor(state, device=self.device).unsqueeze(0)
+             # ? UNSQUEEZE -> Returns a new tensor with a dimension of size one inserted at the specified position.
             # print("EXPLOIT: {state}")
             action_values = self.net(state, model='online')
             # print(f"Action Values: {action_values}")
@@ -209,10 +215,11 @@ class Lander:
         self.exploration_rate *= self.exploration_rate_decay
         self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
 
-        print(self.exploration_rate)
+        # print(self.exploration_rate)
 
         # increment step
         self.curr_step += 1
+        # print(f'The Chosen ONE!: {action_idx}')         # ! Example Action State -> [ 0.16972001 -0.9608854 ]
         return action_idx
     
     def cache(self, state, next_state, action, reward, done):
@@ -235,6 +242,8 @@ class Lander:
         state = torch.tensor(state, device=self.device)
         next_state = torch.tensor(next_state, device=self.device)
 
+        # action = first_if_tuple(action).__array__()
+        # reward = first_if_tuple(reward).__array__()
         action = torch.tensor([action], device=self.device)
         reward = torch.tensor([reward], device=self.device)
         done = torch.tensor([done], device=self.device)
@@ -280,25 +289,62 @@ class Lander:
         return (td_est.mean().item, loss)
 
     # ! TD Estimate & TD Learning
+    # ! We are basically trying to approximate Q(s,a) with a neural network.
+    # ! To do this we have to calculate targets using Bellman's equations.
+
     # * Disable gradient to avoid backprop
+    # ? TD ESTIMATE & TD LEARNING
+    # ? Two values are involved in learning
+    # ? TD ESTIMATE - Optimal Q* for a given state 's' is TDe = Q*_online(s, a)
+    # ? TD TARGET - Aggregation of current reward and estimated Q* in the next state s' is
+    # ?                         a' = argmaxQonline(s', a)
+    # ?                         TD_target = reward + discount x Q*_target(s', a')
+    # ? Since we don't know what next action a' will be, we use the action a' that maximizes Qonline in the next state s'
+
     def td_estimate(self, state, action):
+        x =  [np.arange(0, self.batch_size), action]          # ! Create a row of batch size so you can multiply it with action which has the same number of rows as batch size.
+        # print(f'X: {x} and Action {action} and Action Type: {type(action)} and Action Shape: {action.shape}')        # The action space in MARIO tutorial is limited to [0, 1] While ours is a bit different [main, lateral].
+        # ! Online learning -> Approach used in Machine Learning that takes in sample of real time data one observation at a time.
+        
         current_Q = self.net(state, model='online')[
-            np.arange(0, self.batch_size), action
-        ]   # Q_online
+            np.arange(0, self.batch_size*2).reshape((8,2)), action.long()               # Problem here is that the first 
+            ]   # Q_online
+        # X: [0 1 2 3 4 5 6 7] and 
+        # Action tensor
+        # ([[-0.8828,  0.1326],
+        # [ 0.7974, -0.5608],
+        # [-0.4290, -0.4602],
+        # [ 0.6359,  0.0105],
+        # [ 0.1477, -0.6896],
+        # [-0.4523,  0.5478],
+        # [ 0.9237, -0.9010],
+        # [-0.8544,  0.7527]])
+        # print(f'Current Q: {current_Q} and x: {x}')
+        # print(f'Current Q -> {current_Q}')
         return current_Q
-    
+    # ! Important to note that target network's parameters are not trained, but they are periodically synchronized with the paramters of
+    # ! the main Q-network. The idea is that using the target network's Q values to train the main Q-network will improve the stability
+    # ! of the training.
     @torch.no_grad()
     def td_target(self, reward, next_state, done):
+        x =  [np.arange(0, self.batch_size), action]
+        # print(f'TD_Target Normal Action--> X: {x} and Action {action} and Action Type: {type(action)}')
         next_state_Q = self.net(next_state, model='online')
+        # print(f'Next State Q: {next_state_Q} and and Size {next_state_Q.shape}')
         best_action = torch.argmax(next_state_Q, axis=1)
+        print(f'TD_Target --> X: {x} and Action {best_action} and Action Type: {type(best_action)}')
         next_Q = self.net(next_state, model='target')[
-            np.arange(0, self.batch_size), best_action
+            np.arange(0, self.batch_size*2).reshape(8,2), best_action[:16].reshape(8, 2)
         ]
+        # TD_target = reward + discount x Q*_target(s', a')
+        # print(f'NEXT Q --> {next_Q}')
+
 
         return (reward + (1 - done.float()) * self.gamma * next_Q).float()
 
     # ! Update the model
     def update_Q_online(self, td_estimate, td_target):
+        print(f'Size TDe: {td_estimate.shape}, Size TDt: {td_target.shape}')
         loss = self.loss_fn(td_estimate, td_target)
         self.optimizer.zero_grad()
         loss.backward()
@@ -326,26 +372,38 @@ class LanderNet(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
         c = input_dim
+        out = output_dim[0]
         print("Using CONV")
-        # print(f'Channels: {c} & Channel Type {type(c)}')
-        # print(f'Output Channel: {output_dim[0]}')
+        print(f'Channels: {c} & Channel Type {type(c)}')        # Channels: 8 & Channel Type class <'int'>
+        print(f'Output Channel: {output_dim[0]}')               # Output Channels: 2
         # if h != 84:
         #     raise ValueError
         # if w != 84:
         #     raise ValueError
 
         # !! YE HAI ONLINE
+
         self.online = nn.Sequential(
-            nn.Conv2d(in_channels=c, out_channels=32, kernel_size=4, stride=2),
+            # nn.Conv2d(in_channels=c, out_channels=32, kernel_size=4, stride=2),
+            # nn.ReLU(),
+            # nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1),
+            # nn.ReLU(),
+            # nn.Conv2d(in_channels=64, out_channels=64, kernel_size=2, stride=1),
+            # nn.ReLU(),
+            # nn.Flatten(),
+            # nn.Linear(3136, 512),
+            # nn.ReLU(),
+            # nn.Linear(512, output_dim[0]),
+            nn.Conv1d(in_channels=c, out_channels=32, kernel_size=4),  # ? in = 8, 
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1),
+            nn.Conv1d(in_channels=32, out_channels=64, kernel_size=2),
             nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=2, stride=1),
+            nn.Conv1d(in_channels=64, out_channels=64, kernel_size=2),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3136, 512),
+            nn.Linear(3, 128),
             nn.ReLU(),
-            nn.Linear(512, output_dim[0]),
+            nn.Linear(128, 2),
         )
 
         self.target = copy.deepcopy(self.online)
@@ -357,6 +415,7 @@ class LanderNet(nn.Module):
     def forward(self, input, model):
         # * The forward pass
         if model == 'online':
+            # print(f'Input {input} has len: {type(input)}') # ! Input tensor([[-0.3194,  1.1934, -0.7491, -0.5035,  0.4231,  0.0699,  0.0000,  0.0000]]) has len: <class 'torch.Tensor'>
             return self.online(input)
         elif model == 'target':
             return self.target(input)
@@ -492,9 +551,9 @@ for e in range(episodes):
     # * PLAY THE GAME
     while True:
         # * Run agent on the state
-        # print("ACT")
+        print("ACT")
         action = lander.act(state)
-        # print(action)
+        print(action)
 
         # * Agent performs the action
         next_state, reward, done, _, info = env.step(action)
@@ -504,8 +563,11 @@ for e in range(episodes):
         lander.cache(state, next_state, action, reward, done)
 
         # * Learn
-        # print("LEARN")
+        print("LEARN")
         q, loss = lander.learn()
+        if (q is not None and loss is not None):
+            print(q)
+            print(loss)
 
         # * Log
         # print("LOG")
