@@ -65,6 +65,7 @@ env.reset()
 # ? This is basically a random action from the action space
 next_state, reward, done, _, info = env.step(action=np.array([0.5, -0.5]))
 print(f"State Shape: {next_state.shape}. \n Reward: {reward}, \n Done: {done} \n Info: {info}")
+print(f'Next State {next_state}')
 # ! Original in Mario -> (240, 256, 3)
 # ! State shape in Lander -> (8,)
 # ! Channels: 8 & Channel Type class <'int'>
@@ -551,9 +552,9 @@ for e in range(episodes):
     # * PLAY THE GAME
     while True:
         # * Run agent on the state
-        print("ACT")
+        # print("ACT")
         action = lander.act(state)
-        print(action)
+        # print(action)
 
         # * Agent performs the action
         next_state, reward, done, _, info = env.step(action)
@@ -563,7 +564,7 @@ for e in range(episodes):
         lander.cache(state, next_state, action, reward, done)
 
         # * Learn
-        print("LEARN")
+        # print("LEARN")
         q, loss = lander.learn()
         if (q is not None and loss is not None):
             print(q)
